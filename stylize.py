@@ -7,18 +7,18 @@ from PIL import Image
 import copy
 
 from loss import StyleLoss, ContentLoss
-from utils import save_image, Normalization, image_loader
+from utils import save_image, Normalization, image_loader, toPIL
 from vgg import load_vgg16
 import sys
 import getopt
+
+from tqdm import tqdm
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Working on ", device)
 
 imsize = 800 if torch.cuda.is_available() else 128
-print("imsize set to", imsize)
-print()
 
 normalization_mean = torch.tensor([0.485, 0.456, 0.406]).to(device)
 normalization_std = torch.tensor([0.229, 0.224, 0.225]).to(device)
@@ -83,9 +83,9 @@ def get_style_model_and_losses(parent_model,
 
 
 def run_style_transfer(parent_model,
-                       content_img, style_img, input_img, num_steps=500,
-                       style_weight=1000000, content_weight=1):
-    """Run the style transfer."""
+                       content_img, style_img, input_img, num_steps=10,
+                       style_weight=1000000, content_weight=1, save_epoch=True):
+
     out = get_style_model_and_losses(parent_model, style_img, content_img)
     model, style_losses, content_losses = out
     optimizer = optim.LBFGS([input_img.requires_grad_()])
@@ -120,7 +120,6 @@ def run_style_transfer(parent_model,
                 print("Epoch {}/{}:".format(run[0], num_steps), end='\t')
                 print('Style Loss : {:4f} Content Loss: {:4f}'.format(
                     style_score.item(), content_score.item()))
-                print()
                 if save_epoch:
                     outputfile = './art-{}.jpg'.format(run[0])
                     save_image(outputfile, input_img)
@@ -133,37 +132,32 @@ def run_style_transfer(parent_model,
     return input_img
 
 
-if __name__ == "__main__":
-    argv = sys.argv[1:]
+def stylize(content_img, style_img, image_size=imsize):
     modelfile = './.saved_models/vgg16-397923af.pth'
-    outputfile = './art.jpg'
-    inputfile = "./images/dancing.jpg"
-    stylefile = "./images/picasso.jpg"
-    try:
-        opts, args = getopt.getopt(argv, "hi:o:", ["ifile=", "sfile="])
-    except getopt.GetoptError:
-        print('test.py -i <inputfile> -o <stylefile>')
-        sys.exit(2)
-    for opt, arg in opts:
-        if opt == '-h':
-            print('python stylize.py -i <inputfile> -s <stylefile>')
-            sys.exit()
-        elif opt in ("-i", "--ifile"):
-            inputfile = arg
-        elif opt in ("-s", "--sfile"):
-            stylefile = arg
-    print('Input file is "', inputfile)
-    print('Style file is "', stylefile)
     cnn = load_vgg16(modelfile)
     cnn = cnn.features.to(device).eval()
 
-    style_img = image_loader(stylefile, imsize, device)
-    content_img = image_loader(inputfile, imsize, device)
     input_img = content_img.clone()
-    USE_WHITE_NOISE = False
-    if USE_WHITE_NOISE:
-        input_img = torch.randn(content_img.data.size(), device=device)
 
     output = run_style_transfer(cnn, content_img, style_img, input_img)
 
-    save_image(outputfile, output)
+    output = output.cpu()
+    output = output.squeeze(0)
+    output = toPIL(output)
+
+    return output
+
+
+if __name__ == "__main__":
+    inputfile = "./images/dancing.jpg"
+    stylefile = "./images/picasso.jpg"
+    outputfile = './art.jpg'
+
+    print('Input file is "', inputfile)
+    print('Style file is "', stylefile)
+
+    style_img = image_loader(stylefile, image_size, device)
+    content_img = image_loader(inputfile, image_size, device)
+
+    output = stylize(content_img, style_img)
+    output.save(outputfile)

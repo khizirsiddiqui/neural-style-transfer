@@ -12,9 +12,9 @@ class GramMatrix(nn.Module):
     Returns:
         Gram matrix of A, of shape (n_C, n_C)
     """
-    def forward(self, input):
-        b, c, h, w = input.size()
-        F = input.view(b, c, h*w)
+    def forward(self, x):
+        b, c, h, w = x.size()
+        F = x.view(b, c, h*w)
         G = torch.bmm(F, F.transpose(1, 2))
         G.div_(h * w)
         return G
@@ -27,9 +27,9 @@ class ContentLoss(nn.Module):
         # Manually compute gradients => detach
         self.target = target.detach()
 
-    def forward(self, input):
-        self.loss = F.mse_loss(input, self.target)
-        return input
+    def forward(self, x):
+        self.loss = F.mse_loss(x, self.target)
+        return x
 
 
 class StyleLoss(nn.Module):
@@ -39,8 +39,8 @@ class StyleLoss(nn.Module):
         # Manually compute gradients => detach
         self.target = GramMatrix()(target_feature).detach()
 
-    def forward(self, input):
-        G = GramMatrix()(input)
+    def forward(self, x):
+        G = GramMatrix()(x)
         self.loss = F.mse_loss(G, self.target)
-        return input
+        return x
 
