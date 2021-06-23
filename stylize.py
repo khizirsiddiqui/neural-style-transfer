@@ -5,6 +5,7 @@ import torch.optim as optim
 from torchvision import transforms
 from PIL import Image
 import copy
+import argparse
 
 from loss import StyleLoss, ContentLoss
 from utils import save_image, Normalization, image_loader, toPIL
@@ -13,6 +14,7 @@ import sys
 import getopt
 
 from tqdm import tqdm
+
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -83,15 +85,13 @@ def get_style_model_and_losses(parent_model,
 
 
 def run_style_transfer(parent_model,
-                       content_img, style_img, input_img, num_steps=10,
-                       style_weight=1000000, content_weight=1, save_epoch=True):
+                       content_img, style_img, input_img, num_steps=1000,
+                       style_weight=1000000, content_weight=1):
 
     out = get_style_model_and_losses(parent_model, style_img, content_img)
     model, style_losses, content_losses = out
     optimizer = optim.LBFGS([input_img.requires_grad_()])
     
-    save_epoch = False
-
     print('Starting..')
     run = [0]
     while run[0] <= num_steps:
@@ -118,11 +118,8 @@ def run_style_transfer(parent_model,
             run[0] += 1
             if run[0] % 50 == 0:
                 print("Epoch {}/{}:".format(run[0], num_steps), end='\t')
-                print('Style Loss : {:4f} Content Loss: {:4f}'.format(
+                print('Style Loss : {:.4f} Content Loss: {:.4f}'.format(
                     style_score.item(), content_score.item()))
-                if save_epoch:
-                    outputfile = './art-{}.jpg'.format(run[0])
-                    save_image(outputfile, input_img)
             return style_score + content_score
 
         optimizer.step(closure)
@@ -132,14 +129,14 @@ def run_style_transfer(parent_model,
     return input_img
 
 
-def stylize(content_img, style_img, image_size=imsize):
+def stylize(content_img, style_img, image_size=imsize, weight=10000, epochs=300):
     modelfile = './.saved_models/vgg16-397923af.pth'
     cnn = load_vgg16(modelfile)
     cnn = cnn.features.to(device).eval()
 
     input_img = content_img.clone()
 
-    output = run_style_transfer(cnn, content_img, style_img, input_img)
+    output = run_style_transfer(cnn, content_img, style_img, input_img, style_weight=weight, num_steps=epochs)
 
     output = output.cpu()
     output = output.squeeze(0)
@@ -149,15 +146,20 @@ def stylize(content_img, style_img, image_size=imsize):
 
 
 if __name__ == "__main__":
-    inputfile = "./images/dancing.jpg"
-    stylefile = "./images/picasso.jpg"
-    outputfile = './art.jpg'
+    parser = argparse.ArgumentParser(description="Stylize Image using VGG16, Gatys et al")
+    parser.add_argument('-i', '-image', type=str, required=True, help="Image Content")
+    parser.add_argument('-s', '-style', type=str, required=True, help="Image Style")
+    parser.add_argument('--output', type=str, default="output.jpg", help="Location of output file")
+    parser.add_argument('--w', type=int, default=100000, help="Style Weight in Loss Computation")
+    parser.add_argument('--epochs', type=int, default=300, help="Style Weight in Loss Computation")
 
-    print('Input file is "', inputfile)
-    print('Style file is "', stylefile)
+    args = parser.parse_args()
 
-    style_img = image_loader(stylefile, image_size, device)
-    content_img = image_loader(inputfile, image_size, device)
+    print('Input file is ', args.i)
+    print('Style file is ', args.s)
 
-    output = stylize(content_img, style_img)
-    output.save(outputfile)
+    style_img = image_loader(args.s, imsize, device)
+    content_img = image_loader(args.i, imsize, device)
+
+    output = stylize(content_img, style_img, weight=args.w, epochs=args.epochs)
+    output.save(args.output)
